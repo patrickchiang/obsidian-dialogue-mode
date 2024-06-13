@@ -1,0 +1,10 @@
+{
+	"id": "dialogue-mode",
+	"name": "Dialogue Mode",
+	"version": "1.0.0",
+	"minAppVersion": "1.6.2",
+	"description": "Dialogue mode for editing speech in writing.",
+	"author": "patrickchiang",
+	"authorUrl": "https://github.com/patrickchiang",
+	"isDesktopOnly": true
+}
