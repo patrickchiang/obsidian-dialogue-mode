@@ -12,19 +12,13 @@ const DEFAULT_SETTINGS: DialoguePluginSettings = {
 }
 
 class ColorUtility {
-	settings: DialoguePluginSettings;
-
-	constructor(settings: DialoguePluginSettings) {
-		this.settings = settings;
-	}
-
-	updateFadeColor() {
-		if (!this.settings.fadeEnabled) {
+	static updateFadeColor(settings: DialoguePluginSettings) {
+		if (!settings.fadeEnabled) {
 			document.body.style.setProperty('--adjusted-color', 'inherit');
 			return;
 		}
 
-		const fadeIntensity = this.settings.fadeIntensity
+		const fadeIntensity = settings.fadeIntensity
 
 		const baseColor = getComputedStyle(document.body).getPropertyValue('--text-normal').trim();
 		const fadeColor = getComputedStyle(document.body).getPropertyValue('--dialogue-excluded-text-color').trim();
@@ -41,14 +35,14 @@ class ColorUtility {
 		document.body.style.setProperty('--adjusted-color', blendedColor);
 	}
 
-	hexToRgb(hex: string) {
+	static hexToRgb(hex: string) {
 		const r = parseInt(hex.slice(1, 3), 16);
 		const g = parseInt(hex.slice(3, 5), 16);
 		const b = parseInt(hex.slice(5, 7), 16);
 		return { r, g, b };
 	}
 
-	lerp(start: number, end: number, t: number) {
+	static lerp(start: number, end: number, t: number) {
 		return start + (end - start) * t;
 	}
 }
@@ -56,17 +50,16 @@ class ColorUtility {
 export default class DialoguePlugin extends Plugin {
 	settings: DialoguePluginSettings;
 	lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
-	colorUtility: ColorUtility;
 
 	async onload() {
 		await this.loadSettings();
 
-		this.colorUtility = new ColorUtility(this.settings);
-
 		this.addSettingTab(new DialoguePluginSettingsTab(this.app, this));
 
 		this.registerMarkdownPostProcessor((element, context) => {
-			this.highlightDialog(element);
+			if (this.settings.fadeEnabled) {
+				this.highlightDialog(element);
+			}
 		});
 
 		this.registerEditorExtension(this.dialogHighlighterExtension());
@@ -82,11 +75,11 @@ export default class DialoguePlugin extends Plugin {
 		this.settings.fadeEnabled = !this.settings.fadeEnabled;
 		this.saveSettings();
 		new Notice(`Dialogue fade out ${this.settings.fadeEnabled ? 'enabled' : 'disabled'}`);
-		this.colorUtility.updateFadeColor();
+		ColorUtility.updateFadeColor(this.settings);
 	}
 
 	highlightDialog(element: HTMLElement) {
-		this.colorUtility.updateFadeColor();
+		ColorUtility.updateFadeColor(this.settings);
 
 		const textNodes = this.getTextNodes(element);
 
@@ -163,7 +156,7 @@ export default class DialoguePlugin extends Plugin {
 	}
 
 	dialogHighlighterExtension() {
-		return ViewPlugin.define(view => new DialogueEditorExtension(view, this.colorUtility), {
+		return ViewPlugin.define(view => new DialogueEditorExtension(view, this.settings), {
 			decorations: v => v.decorations
 		});
 	}
@@ -179,21 +172,25 @@ export default class DialoguePlugin extends Plugin {
 
 class DialogueEditorExtension {
 	decorations: DecorationSet;
-	colorUtility: ColorUtility;
+	settings: DialoguePluginSettings;
 
-	constructor(view: EditorView, colorUtility: ColorUtility) {
+	constructor(view: EditorView, settings: DialoguePluginSettings) {
+		this.settings = settings;
 		this.decorations = this.buildDecorations(view);
-		this.colorUtility = colorUtility;
 	}
 
 	update(update: ViewUpdate) {
 		if (update.docChanged || update.viewportChanged) {
 			this.decorations = this.buildDecorations(update.view);
-			this.colorUtility.updateFadeColor();
+			ColorUtility.updateFadeColor(this.settings);
 		}
 	}
 
 	buildDecorations(view: EditorView) {
+		if (!this.settings.fadeEnabled) {
+			return Decoration.none;
+		}
+
 		const builder = [];
 		const openQuotes = ['"', '“', '‘'];
 		const closeQuotes = ['"', '”', '’'];
@@ -276,7 +273,7 @@ class DialoguePluginSettingsTab extends PluginSettingTab {
 					.onChange(async value => {
 						this.plugin.settings.fadeIntensity = value;
 						await this.plugin.saveSettings();
-						this.plugin.colorUtility.updateFadeColor();
+						ColorUtility.updateFadeColor(this.plugin.settings);
 					});
 			});
 	}
