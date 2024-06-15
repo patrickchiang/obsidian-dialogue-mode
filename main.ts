@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from 'obsidian';
+import { App, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from 'obsidian';
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from '@codemirror/view';
 
 interface DialoguePluginSettings {
@@ -67,7 +67,12 @@ export default class DialoguePlugin extends Plugin {
 		this.addCommand({
 			id: 'toggle-dialogue-mode',
 			name: 'Toggle dialogue mode',
-			callback: () => this.toggleFadeOut(),
+			callback: () => {
+				this.toggleFadeOut();
+
+				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				markdownView?.previewMode.rerender(true);
+			},
 		});
 	}
 
@@ -83,23 +88,26 @@ export default class DialoguePlugin extends Plugin {
 
 		const textNodes = this.getTextNodes(element);
 
+		let inDialog = false;
+
 		textNodes.forEach(node => {
 			const text = node.nodeValue || "";
-			const newContent = this.processTextForDialogue(text);
+			const newContent = this.processTextForDialogue(text, inDialog);
+			inDialog = newContent.inDialog;
 
-			if (newContent !== text) {
-				const wrapper = document.createElement('span');
-				wrapper.innerHTML = newContent;
-				node.parentNode?.replaceChild(wrapper, node);
+			if (newContent.text.join('') !== text) {
+				const wrapper = this.createWrapper(newContent.text);
+				if (node.parentNode) {
+					node.parentNode.replaceChild(wrapper, node);
+				}
 			}
 		});
 	}
 
-	processTextForDialogue(text: string): string {
+	processTextForDialogue(text: string, inDialog: boolean): { text: (string | HTMLElement)[], inDialog: boolean } {
 		const openQuotes = ['"', '“', '‘'];
 		const closeQuotes = ['"', '”', '’'];
-		let inDialog = false;
-		let result = '';
+		const result = [];
 		let buffer = '';
 
 		for (let i = 0; i < text.length; i++) {
@@ -109,14 +117,17 @@ export default class DialoguePlugin extends Plugin {
 				buffer += char;
 				if (closeQuotes.includes(char) && (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '.' || text[i + 1] === ',')) {
 					inDialog = false;
-					result += buffer;
+					result.push(buffer);
 					buffer = '';
 				}
 			} else {
 				if (openQuotes.includes(char)) {
 					inDialog = true;
 					if (buffer) {
-						result += `<span class="non-dialogue-text">${buffer}</span>`;
+						const span = document.createElement('span');
+						span.className = 'non-dialogue-text';
+						span.appendChild(document.createTextNode(buffer));
+						result.push(span);
 						buffer = '';
 					}
 					buffer += char;
@@ -128,13 +139,28 @@ export default class DialoguePlugin extends Plugin {
 
 		if (buffer) {
 			if (inDialog) {
-				result += buffer;
+				result.push(buffer);
 			} else {
-				result += `<span class="non-dialogue-text">${buffer}</span>`;
+				const span = document.createElement('span');
+				span.className = 'non-dialogue-text';
+				span.appendChild(document.createTextNode(buffer));
+				result.push(span);
 			}
 		}
 
-		return result;
+		return { text: result, inDialog: inDialog };
+	}
+
+	createWrapper(content: (string | HTMLElement)[]): HTMLElement {
+		const wrapper = document.createElement('span');
+		content.forEach(item => {
+			if (typeof item === 'string') {
+				wrapper.appendChild(document.createTextNode(item));
+			} else {
+				wrapper.appendChild(item);
+			}
+		});
+		return wrapper;
 	}
 
 	getTextNodes(element: HTMLElement): Text[] {
@@ -142,16 +168,15 @@ export default class DialoguePlugin extends Plugin {
 		const nodesToVisit: Node[] = [element];
 
 		while (nodesToVisit.length > 0) {
-			const currentNode = nodesToVisit.pop();
+			const currentNode = nodesToVisit.shift();
 			if (currentNode) {
 				if (currentNode.nodeType === Node.TEXT_NODE) {
 					textNodes.push(currentNode as Text);
 				} else {
-					nodesToVisit.push(...Array.from(currentNode.childNodes));
+					nodesToVisit.unshift(...Array.from(currentNode.childNodes));
 				}
 			}
 		}
-
 		return textNodes;
 	}
 
@@ -183,6 +208,8 @@ class DialogueEditorExtension {
 		if (update.docChanged || update.viewportChanged) {
 			this.decorations = this.buildDecorations(update.view);
 			ColorUtility.updateFadeColor(this.settings);
+		} else {
+			console.log(update);
 		}
 	}
 
@@ -194,7 +221,7 @@ class DialogueEditorExtension {
 		const builder = [];
 		const openQuotes = ['"', '“', '‘'];
 		const closeQuotes = ['"', '”', '’'];
-		let inDialog = false;
+		const quoteStack: Array<{ quote: string, pos: number }> = [];
 		let bufferStart = 0;
 
 		for (const { from, to } of view.visibleRanges) {
@@ -205,28 +232,27 @@ class DialogueEditorExtension {
 
 				for (let i = 0; i < text.length; i++) {
 					const char = text[i];
+					const openIndex = openQuotes.indexOf(char);
+					const closeIndex = closeQuotes.indexOf(char);
 
-					if (inDialog) {
-						if (closeQuotes.includes(char) && (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '.' || text[i + 1] === ',')) {
-							inDialog = false;
-							bufferStart = line.from + i + 1;
+					if (openIndex !== -1) {
+						quoteStack.push({ quote: char, pos: line.from + i });
+						if (bufferStart < line.from + i) {
+							builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.from + i));
 						}
-					} else {
-						if (openQuotes.includes(char)) {
-							inDialog = true;
-							if (bufferStart < line.from + i) {
-								builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.from + i));
-							}
-							bufferStart = line.from + i;
+						bufferStart = line.from + i + 1;
+					} else if (closeIndex !== -1 && quoteStack.length > 0 && openQuotes.indexOf(quoteStack[quoteStack.length - 1].quote) === closeIndex) {
+						// Matching close quote found
+						const opening = quoteStack.pop();
+						if (opening && opening.pos !== undefined) {
+							builder.push(Decoration.mark({ class: 'dialogue-text' }).range(opening.pos, line.from + i + 1));
+							bufferStart = line.from + i + 1;
 						}
 					}
 				}
 
-				// Append any remaining buffer
 				if (bufferStart < line.to) {
-					if (!inDialog) {
-						builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.to));
-					}
+					builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.to));
 				}
 
 				pos = line.to + 1;
