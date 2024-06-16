@@ -208,8 +208,6 @@ class DialogueEditorExtension {
 		if (update.docChanged || update.viewportChanged) {
 			this.decorations = this.buildDecorations(update.view);
 			ColorUtility.updateFadeColor(this.settings);
-		} else {
-			console.log(update);
 		}
 	}
 
