@@ -1,7 +1,7 @@
 {
 	"id": "dialogue-mode",
 	"name": "Dialogue Mode",
-	"version": "1.0.3",
+	"version": "1.0.4",
 	"minAppVersion": "1.6.2",
 	"description": "Dialogue mode for editing speech in writing.",
 	"author": "patrickchiang",

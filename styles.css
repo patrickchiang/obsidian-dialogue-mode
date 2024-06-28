@@ -1,3 +1,7 @@
+:root {
+    --dialogue-text-color: var(--text-normal);
+}
+
 .theme-dark {
     --dialogue-excluded-text-color: #2e2e2e;
 }
@@ -8,4 +12,8 @@
 
 .non-dialogue-text {
     color: var(--adjusted-color);
+}
+
+.dialogue-text {
+    color: var(--dialogue-text-color);
 }

@@ -4,11 +4,15 @@ import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from '@
 interface DialoguePluginSettings {
 	fadeIntensity: number;
 	fadeEnabled: boolean;
+	modifyDialogueColor: boolean;
+	dialogueColor: string;
 }
 
 const DEFAULT_SETTINGS: DialoguePluginSettings = {
 	fadeIntensity: 100,
-	fadeEnabled: true
+	fadeEnabled: true,
+	modifyDialogueColor: false,
+	dialogueColor: '#FFFFFF'
 }
 
 class ColorUtility {
@@ -33,6 +37,12 @@ class ColorUtility {
 
 		const blendedColor = `rgb(${blendRGB.r}, ${blendRGB.g}, ${blendRGB.b})`;
 		document.body.style.setProperty('--adjusted-color', blendedColor);
+
+		if (settings.modifyDialogueColor) {
+			document.body.style.setProperty('--dialogue-text-color', settings.dialogueColor);
+		} else {
+			document.body.style.setProperty('--dialogue-text-color', baseColor);
+		}
 	}
 
 	static hexToRgb(hex: string) {
@@ -50,6 +60,7 @@ class ColorUtility {
 export default class DialoguePlugin extends Plugin {
 	settings: DialoguePluginSettings;
 	lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
+	toggleChanged: boolean;
 
 	async onload() {
 		await this.loadSettings();
@@ -68,6 +79,7 @@ export default class DialoguePlugin extends Plugin {
 			id: 'toggle-dialogue-mode',
 			name: 'Toggle dialogue mode',
 			callback: () => {
+				this.toggleChanged = true;
 				this.toggleFadeOut();
 
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -117,7 +129,10 @@ export default class DialoguePlugin extends Plugin {
 				buffer += char;
 				if (closeQuotes.includes(char) && (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '.' || text[i + 1] === ',')) {
 					inDialog = false;
-					result.push(buffer);
+					const span = document.createElement('span');
+					span.className = 'dialogue-text';
+					span.appendChild(document.createTextNode(buffer));
+					result.push(span);
 					buffer = '';
 				}
 			} else {
@@ -139,7 +154,10 @@ export default class DialoguePlugin extends Plugin {
 
 		if (buffer) {
 			if (inDialog) {
-				result.push(buffer);
+				const span = document.createElement('span');
+				span.className = 'dialogue-text';
+				span.appendChild(document.createTextNode(buffer));
+				result.push(span);
 			} else {
 				const span = document.createElement('span');
 				span.className = 'non-dialogue-text';
@@ -181,7 +199,7 @@ export default class DialoguePlugin extends Plugin {
 	}
 
 	dialogHighlighterExtension() {
-		return ViewPlugin.define(view => new DialogueEditorExtension(view, this.settings), {
+		return ViewPlugin.define(view => new DialogueEditorExtension(view, this), {
 			decorations: v => v.decorations
 		});
 	}
@@ -197,22 +215,23 @@ export default class DialoguePlugin extends Plugin {
 
 class DialogueEditorExtension {
 	decorations: DecorationSet;
-	settings: DialoguePluginSettings;
+	plugin: DialoguePlugin;
 
-	constructor(view: EditorView, settings: DialoguePluginSettings) {
-		this.settings = settings;
+	constructor(view: EditorView, plugin: DialoguePlugin) {
+		this.plugin = plugin;
 		this.decorations = this.buildDecorations(view);
 	}
 
 	update(update: ViewUpdate) {
-		if (update.docChanged || update.viewportChanged) {
+		if (update.docChanged || update.viewportChanged || this.plugin.toggleChanged) {
 			this.decorations = this.buildDecorations(update.view);
-			ColorUtility.updateFadeColor(this.settings);
+			ColorUtility.updateFadeColor(this.plugin.settings);
+			this.plugin.toggleChanged = false;
 		}
 	}
 
 	buildDecorations(view: EditorView) {
-		if (!this.settings.fadeEnabled) {
+		if (!this.plugin.settings.fadeEnabled) {
 			return Decoration.none;
 		}
 
@@ -296,6 +315,34 @@ class DialoguePluginSettingsTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.fadeIntensity)
 					.onChange(async value => {
 						this.plugin.settings.fadeIntensity = value;
+						await this.plugin.saveSettings();
+						ColorUtility.updateFadeColor(this.plugin.settings);
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Modify dialogue text color')
+			.setDesc('Enable or disable the modification of the dialogue text color.')
+			.addToggle(toggle => {
+				toggle
+					.setValue(this.plugin.settings.modifyDialogueColor)
+					.onChange(async value => {
+						this.plugin.settings.modifyDialogueColor = value;
+						await this.plugin.saveSettings();
+						this.display();
+						ColorUtility.updateFadeColor(this.plugin.settings);
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Dialogue text color')
+			.setDesc('The color of the dialogue text.')
+			.addColorPicker(color => {
+				color
+					.setValue(this.plugin.settings.dialogueColor)
+					.setDisabled(!this.plugin.settings.modifyDialogueColor)
+					.onChange(async value => {
+						this.plugin.settings.dialogueColor = value;
 						await this.plugin.saveSettings();
 						ColorUtility.updateFadeColor(this.plugin.settings);
 					});

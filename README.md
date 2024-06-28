@@ -8,9 +8,11 @@ Obsidian Dialogue Mode is a plugin designed to enhance your writing experience i
 
 Dialogue mode is enabled by default.
 
-**Toggle Dialog Mode**: Use the command palette (Ctrl+P or Cmd+P) and search for "Toggle dialogue mode" to enable or disable the fade-out effect.
+**Toggle Dialogue Mode**: Use the command palette (Ctrl+P or Cmd+P) and search for "Toggle dialogue mode" to enable or disable the fade-out effect.
 
 **Customizable Fade Intensity**: Adjust the fade intensity in the settings tab.
+
+**Customizable Dialogue Color**: Adjust the color of the text in dialogue.
 
 ## Installing
 
