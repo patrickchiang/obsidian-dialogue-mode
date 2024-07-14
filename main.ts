@@ -98,15 +98,13 @@ export default class DialoguePlugin extends Plugin {
 
 	highlightDialog(element: HTMLElement) {
 		ColorUtility.updateFadeColor(this.settings);
-	
+
 		const textNodes = this.getTextNodes(element);
-		let inDialog = false;
-	
+
 		textNodes.forEach(node => {
 			const text = node.nodeValue || "";
-			const result = DialogueUtility.detectDialogue(text, inDialog);
-			inDialog = result.inDialog;
-	
+			const result = DialogueUtility.detectDialogue(text);
+
 			if (result.parts.map(p => p.text).join('') !== text) {
 				const wrapper = document.createDocumentFragment();
 				result.parts.forEach(part => {
@@ -115,7 +113,7 @@ export default class DialoguePlugin extends Plugin {
 					span.appendChild(document.createTextNode(part.text));
 					wrapper.appendChild(span);
 				});
-	
+
 				if (node.parentNode) {
 					node.parentNode.replaceChild(wrapper, node);
 				}
@@ -188,29 +186,27 @@ class DialogueEditorExtension {
 		if (!this.plugin.settings.fadeEnabled) {
 			return Decoration.none;
 		}
-	
+
 		const builder: Range<Decoration>[] = [];
-		let inDialog = false;
-	
+
 		for (const { from, to } of view.visibleRanges) {
 			for (let pos = from; pos <= to;) {
 				const line = view.state.doc.lineAt(pos);
 				const text = line.text;
-	
-				const result = DialogueUtility.detectDialogue(text, inDialog);
-				inDialog = result.inDialog;
-	
+
+				const result = DialogueUtility.detectDialogue(text);
+
 				let bufferStart = line.from;
 				result.parts.forEach(part => {
 					const end = bufferStart + part.text.length;
 					builder.push(Decoration.mark({ class: part.isDialogue ? 'dialogue-text' : 'non-dialogue-text' }).range(bufferStart, end));
 					bufferStart = end;
 				});
-	
+
 				pos = line.to + 1;
 			}
 		}
-	
+
 		return Decoration.set(builder, true);
 	}
 }
@@ -296,11 +292,12 @@ interface DetectionResult {
 }
 
 class DialogueUtility {
-	static detectDialogue(text: string, inDialog: boolean): DetectionResult {
-		const openQuotes = ['"', '“', '‘', "'"];
-		const closeQuotes = ['"', '”', '’', "'"];
+	static detectDialogue(text: string): DetectionResult {
+		const openQuotes = ['"', '“', '‘'];
+		const closeQuotes = ['"', '”', '’'];
 		const parts: DialoguePart[] = [];
 		let buffer = '';
+		let inDialog = false;
 
 		for (let i = 0; i < text.length; i++) {
 			const char = text[i];
@@ -330,6 +327,6 @@ class DialogueUtility {
 			parts.push({ text: buffer, isDialogue: inDialog });
 		}
 
-		return { parts, inDialog };
-	}	
+		return { parts, inDialog: false };
+	}
 }
