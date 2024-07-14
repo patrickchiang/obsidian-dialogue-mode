@@ -1,5 +1,6 @@
 import { App, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from 'obsidian';
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate } from '@codemirror/view';
+import { Range } from '@codemirror/state';
 
 interface DialoguePluginSettings {
 	fadeIntensity: number;
@@ -97,76 +98,29 @@ export default class DialoguePlugin extends Plugin {
 
 	highlightDialog(element: HTMLElement) {
 		ColorUtility.updateFadeColor(this.settings);
-
+	
 		const textNodes = this.getTextNodes(element);
-
 		let inDialog = false;
-
+	
 		textNodes.forEach(node => {
 			const text = node.nodeValue || "";
-			const newContent = this.processTextForDialogue(text, inDialog);
-			inDialog = newContent.inDialog;
-
-			if (newContent.text.join('') !== text) {
-				const wrapper = this.createWrapper(newContent.text);
+			const result = DialogueUtility.detectDialogue(text, inDialog);
+			inDialog = result.inDialog;
+	
+			if (result.parts.map(p => p.text).join('') !== text) {
+				const wrapper = document.createDocumentFragment();
+				result.parts.forEach(part => {
+					const span = document.createElement('span');
+					span.className = part.isDialogue ? 'dialogue-text' : 'non-dialogue-text';
+					span.appendChild(document.createTextNode(part.text));
+					wrapper.appendChild(span);
+				});
+	
 				if (node.parentNode) {
 					node.parentNode.replaceChild(wrapper, node);
 				}
 			}
 		});
-	}
-
-	processTextForDialogue(text: string, inDialog: boolean): { text: (string | HTMLElement)[], inDialog: boolean } {
-		const openQuotes = ['"', '“', '‘'];
-		const closeQuotes = ['"', '”', '’'];
-		const result = [];
-		let buffer = '';
-
-		for (let i = 0; i < text.length; i++) {
-			const char = text[i];
-
-			if (inDialog) {
-				buffer += char;
-				if (closeQuotes.includes(char) && (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '.' || text[i + 1] === ',')) {
-					inDialog = false;
-					const span = document.createElement('span');
-					span.className = 'dialogue-text';
-					span.appendChild(document.createTextNode(buffer));
-					result.push(span);
-					buffer = '';
-				}
-			} else {
-				if (openQuotes.includes(char)) {
-					inDialog = true;
-					if (buffer) {
-						const span = document.createElement('span');
-						span.className = 'non-dialogue-text';
-						span.appendChild(document.createTextNode(buffer));
-						result.push(span);
-						buffer = '';
-					}
-					buffer += char;
-				} else {
-					buffer += char;
-				}
-			}
-		}
-
-		if (buffer) {
-			if (inDialog) {
-				const span = document.createElement('span');
-				span.className = 'dialogue-text';
-				span.appendChild(document.createTextNode(buffer));
-				result.push(span);
-			} else {
-				const span = document.createElement('span');
-				span.className = 'non-dialogue-text';
-				span.appendChild(document.createTextNode(buffer));
-				result.push(span);
-			}
-		}
-
-		return { text: result, inDialog: inDialog };
 	}
 
 	createWrapper(content: (string | HTMLElement)[]): HTMLElement {
@@ -230,52 +184,33 @@ class DialogueEditorExtension {
 		}
 	}
 
-	buildDecorations(view: EditorView) {
+	buildDecorations(view: EditorView): DecorationSet {
 		if (!this.plugin.settings.fadeEnabled) {
 			return Decoration.none;
 		}
-
-		const builder = [];
-		const openQuotes = ['"', '“', '‘'];
-		const closeQuotes = ['"', '”', '’'];
-		const quoteStack: Array<{ quote: string, pos: number }> = [];
-		let bufferStart = 0;
-
+	
+		const builder: Range<Decoration>[] = [];
+		let inDialog = false;
+	
 		for (const { from, to } of view.visibleRanges) {
 			for (let pos = from; pos <= to;) {
 				const line = view.state.doc.lineAt(pos);
 				const text = line.text;
-				bufferStart = line.from;
-
-				for (let i = 0; i < text.length; i++) {
-					const char = text[i];
-					const openIndex = openQuotes.indexOf(char);
-					const closeIndex = closeQuotes.indexOf(char);
-
-					if (openIndex !== -1) {
-						quoteStack.push({ quote: char, pos: line.from + i });
-						if (bufferStart < line.from + i) {
-							builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.from + i));
-						}
-						bufferStart = line.from + i + 1;
-					} else if (closeIndex !== -1 && quoteStack.length > 0 && openQuotes.indexOf(quoteStack[quoteStack.length - 1].quote) === closeIndex) {
-						// Matching close quote found
-						const opening = quoteStack.pop();
-						if (opening && opening.pos !== undefined) {
-							builder.push(Decoration.mark({ class: 'dialogue-text' }).range(opening.pos, line.from + i + 1));
-							bufferStart = line.from + i + 1;
-						}
-					}
-				}
-
-				if (bufferStart < line.to) {
-					builder.push(Decoration.mark({ class: 'non-dialogue-text' }).range(bufferStart, line.to));
-				}
-
+	
+				const result = DialogueUtility.detectDialogue(text, inDialog);
+				inDialog = result.inDialog;
+	
+				let bufferStart = line.from;
+				result.parts.forEach(part => {
+					const end = bufferStart + part.text.length;
+					builder.push(Decoration.mark({ class: part.isDialogue ? 'dialogue-text' : 'non-dialogue-text' }).range(bufferStart, end));
+					bufferStart = end;
+				});
+	
 				pos = line.to + 1;
 			}
 		}
-
+	
 		return Decoration.set(builder, true);
 	}
 }
@@ -348,4 +283,53 @@ class DialoguePluginSettingsTab extends PluginSettingTab {
 					});
 			});
 	}
+}
+
+interface DialoguePart {
+	text: string;
+	isDialogue: boolean;
+}
+
+interface DetectionResult {
+	parts: DialoguePart[];
+	inDialog: boolean;
+}
+
+class DialogueUtility {
+	static detectDialogue(text: string, inDialog: boolean): DetectionResult {
+		const openQuotes = ['"', '“', '‘', "'"];
+		const closeQuotes = ['"', '”', '’', "'"];
+		const parts: DialoguePart[] = [];
+		let buffer = '';
+
+		for (let i = 0; i < text.length; i++) {
+			const char = text[i];
+
+			if (inDialog) {
+				buffer += char;
+				if (closeQuotes.includes(char) && (i === text.length - 1 || text[i + 1] === ' ' || text[i + 1] === '.' || text[i + 1] === ',')) {
+					inDialog = false;
+					parts.push({ text: buffer, isDialogue: true });
+					buffer = '';
+				}
+			} else {
+				if (openQuotes.includes(char)) {
+					inDialog = true;
+					if (buffer) {
+						parts.push({ text: buffer, isDialogue: false });
+						buffer = '';
+					}
+					buffer += char;
+				} else {
+					buffer += char;
+				}
+			}
+		}
+
+		if (buffer) {
+			parts.push({ text: buffer, isDialogue: inDialog });
+		}
+
+		return { parts, inDialog };
+	}	
 }
