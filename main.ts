@@ -7,13 +7,17 @@ interface DialoguePluginSettings {
 	fadeEnabled: boolean;
 	modifyDialogueColor: boolean;
 	dialogueColor: string;
+	dialogueStarters: string;
+	dialogueEnders: string;
 }
 
 const DEFAULT_SETTINGS: DialoguePluginSettings = {
 	fadeIntensity: 100,
 	fadeEnabled: true,
 	modifyDialogueColor: false,
-	dialogueColor: '#FFFFFF'
+	dialogueColor: '#FFFFFF',
+	dialogueStarters: '“‘"\'«',
+	dialogueEnders: '”’"\'»'
 }
 
 class ColorUtility {
@@ -103,7 +107,7 @@ export default class DialoguePlugin extends Plugin {
 
 		textNodes.forEach(node => {
 			const text = node.nodeValue || "";
-			const result = DialogueUtility.detectDialogue(text);
+			const result = DialogueUtility.detectDialogue(text, this);
 
 			if (result.parts.map(p => p.text).join('') !== text) {
 				const wrapper = document.createDocumentFragment();
@@ -194,7 +198,7 @@ class DialogueEditorExtension {
 				const line = view.state.doc.lineAt(pos);
 				const text = line.text;
 
-				const result = DialogueUtility.detectDialogue(text);
+				const result = DialogueUtility.detectDialogue(text, this.plugin);
 
 				let bufferStart = line.from;
 				result.parts.forEach(part => {
@@ -278,6 +282,31 @@ class DialoguePluginSettingsTab extends PluginSettingTab {
 						ColorUtility.updateFadeColor(this.plugin.settings);
 					});
 			});
+
+		new Setting(containerEl)
+			.setName('Dialogue starters')
+			.setDesc('Characters that indicate the start of a dialogue.')
+			.addText(text => {
+				text
+					.setValue(this.plugin.settings.dialogueStarters)
+					.onChange(async value => {
+						this.plugin.settings.dialogueStarters = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+
+		new Setting(containerEl)
+			.setName('Dialogue enders')
+			.setDesc('Characters that indicate the end of a dialogue.')
+			.addText(text => {
+				text
+					.setValue(this.plugin.settings.dialogueEnders)
+					.onChange(async value => {
+						this.plugin.settings.dialogueEnders = value;
+						await this.plugin.saveSettings();
+					});
+			});
 	}
 }
 
@@ -292,9 +321,11 @@ interface DetectionResult {
 }
 
 class DialogueUtility {
-	static detectDialogue(text: string): DetectionResult {
-		const openQuotes = ['"', '“', '‘'];
-		const closeQuotes = ['"', '”', '’'];
+	static detectDialogue(text: string, plugin: DialoguePlugin): DetectionResult {
+		// const openQuotes = ['"', '“', '‘'];
+		// const closeQuotes = ['"', '”', '’'];
+		const openQuotes = plugin.settings.dialogueStarters.split('');
+		const closeQuotes = plugin.settings.dialogueEnders.split('');
 		const parts: DialoguePart[] = [];
 		let buffer = '';
 		let inDialog = false;
