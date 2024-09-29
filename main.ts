@@ -325,10 +325,10 @@ class DialogueUtility {
 		const openQuotes = plugin.settings.dialogueStarters.split('');
 		const closeQuotes = plugin.settings.dialogueEnders.split('');
 		if (openQuotes.length == 0) {
-			openQuotes.push('"', '“', '‘');
+			openQuotes.push('"', '“', '‘', '«');
 		}
 		if (closeQuotes.length == 0) {
-			closeQuotes.push('"', '”', '’');
+			closeQuotes.push('"', '”', '’', '»');
 		}
 
 		const parts: DialoguePart[] = [];
