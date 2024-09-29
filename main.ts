@@ -322,10 +322,15 @@ interface DetectionResult {
 
 class DialogueUtility {
 	static detectDialogue(text: string, plugin: DialoguePlugin): DetectionResult {
-		// const openQuotes = ['"', '“', '‘'];
-		// const closeQuotes = ['"', '”', '’'];
 		const openQuotes = plugin.settings.dialogueStarters.split('');
 		const closeQuotes = plugin.settings.dialogueEnders.split('');
+		if (openQuotes.length == 0) {
+			openQuotes.push('"', '“', '‘');
+		}
+		if (closeQuotes.length == 0) {
+			closeQuotes.push('"', '”', '’');
+		}
+
 		const parts: DialoguePart[] = [];
 		let buffer = '';
 		let inDialog = false;
